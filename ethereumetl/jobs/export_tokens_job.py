@@ -22,7 +22,7 @@
 
 
 from ethereumetl.executors.batch_work_executor import BatchWorkExecutor
-from ethereumetl.jobs.base_job import BaseJob
+from blockchainetl.jobs.base_job import BaseJob
 from ethereumetl.mappers.token_mapper import EthTokenMapper
 from ethereumetl.service.eth_token_service import EthTokenService
 
@@ -46,8 +46,9 @@ class ExportTokensJob(BaseJob):
         for token_address in token_addresses:
             self._export_token(token_address)
 
-    def _export_token(self, token_address):
+    def _export_token(self, token_address, block_number=None):
         token = self.token_service.get_token(token_address)
+        token.block_number = block_number
         token_dict = self.token_mapper.token_to_dict(token)
         self.item_exporter.export_item(token_dict)
 
@@ -56,8 +57,6 @@ class ExportTokensJob(BaseJob):
         self.item_exporter.close()
 
 
-# https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric-type
-BIG_QUERY_NUMERIC_MAX_VALUE = 99999999999999999999999999999
 ASCII_0 = 0
 
 
@@ -67,9 +66,5 @@ def clean_user_provided_content(content):
         # Error while reading data, error message: Error detected while parsing row starting at position: 9999.
         # Error: Bad character (ASCII 0) encountered.
         return content.translate({ASCII_0: None})
-    elif isinstance(content, int):
-        # NUMERIC type in BigQuery is 16 bytes
-        # https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric-type
-        return content if content <= BIG_QUERY_NUMERIC_MAX_VALUE else None
     else:
         return content

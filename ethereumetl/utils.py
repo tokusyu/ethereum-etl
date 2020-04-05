@@ -22,6 +22,9 @@
 
 
 import itertools
+import warnings
+
+from ethereumetl.misc.retriable_value_error import RetriableValueError
 
 
 def hex_to_dec(hex_string):
@@ -32,6 +35,17 @@ def hex_to_dec(hex_string):
     except ValueError:
         print("Not a hex string %s" % hex_string)
         return hex_string
+
+
+def to_int_or_none(val):
+    if isinstance(val, int):
+        return val
+    if val is None or val == '':
+        return None
+    try:
+        return int(val)
+    except ValueError:
+        return None
 
 
 def chunk_string(string, length):
@@ -54,13 +68,36 @@ def validate_range(range_start_incl, range_end_incl):
 
 def rpc_response_batch_to_results(response):
     for response_item in response:
-        result = response_item.get('result', None)
-        if result is None:
-            error_message = 'result is None in response {}.'.format(response_item)
-            if response_item.get('error', None) is None:
-                error_message = error_message + ' Make sure Ethereum node is synced.'
-            raise ValueError(error_message)
-        yield result
+        yield rpc_response_to_result(response_item)
+
+
+def rpc_response_to_result(response):
+    result = response.get('result')
+    if result is None:
+        error_message = 'result is None in response {}.'.format(response)
+        if response.get('error') is None:
+            error_message = error_message + ' Make sure Ethereum node is synced.'
+            # When nodes are behind a load balancer it makes sense to retry the request in hopes it will go to other,
+            # synced node
+            raise RetriableValueError(error_message)
+        elif response.get('error') is not None and is_retriable_error(response.get('error').get('code')):
+            raise RetriableValueError(error_message)
+        raise ValueError(error_message)
+    return result
+
+
+def is_retriable_error(error_code):
+    if error_code is None:
+        return False
+
+    if not isinstance(error_code, int):
+        return False
+
+    # https://www.jsonrpc.org/specification#error_object
+    if error_code == -32603 or (-32000 >= error_code >= -32099):
+        return True
+
+    return False
 
 
 def split_to_batches(start_incl, end_incl, batch_size):
@@ -88,3 +125,10 @@ def pairwise(iterable):
     a, b = itertools.tee(iterable)
     next(b, None)
     return zip(a, b)
+
+
+def check_classic_provider_uri(chain, provider_uri):
+    if chain == 'classic' and provider_uri == 'https://mainnet.infura.io':
+        warnings.warn("ETC Chain not supported on Infura.io. Using https://ethereumclassic.network instead")
+        return 'https://ethereumclassic.network'
+    return provider_uri

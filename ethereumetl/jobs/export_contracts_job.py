@@ -24,14 +24,15 @@
 import json
 
 from ethereumetl.executors.batch_work_executor import BatchWorkExecutor
-from ethereumetl.jobs.base_job import BaseJob
+from blockchainetl.jobs.base_job import BaseJob
 from ethereumetl.json_rpc_requests import generate_get_code_json_rpc
 from ethereumetl.mappers.contract_mapper import EthContractMapper
 
-# Exports contracts bytecode
 from ethereumetl.service.eth_contract_service import EthContractService
+from ethereumetl.utils import rpc_response_to_result
 
 
+# Exports contracts bytecode
 class ExportContractsJob(BaseJob):
     def __init__(
             self,
@@ -57,13 +58,13 @@ class ExportContractsJob(BaseJob):
 
     def _export_contracts(self, contract_addresses):
         contracts_code_rpc = list(generate_get_code_json_rpc(contract_addresses))
-        response_batch = self.batch_web3_provider.make_request(json.dumps(contracts_code_rpc))
+        response_batch = self.batch_web3_provider.make_batch_request(json.dumps(contracts_code_rpc))
 
         contracts = []
         for response in response_batch:
             # request id is the index of the contract address in contract_addresses list
             request_id = response['id']
-            result = response['result']
+            result = rpc_response_to_result(response)
 
             contract_address = contract_addresses[request_id]
             contract = self._get_contract(contract_address, result)
